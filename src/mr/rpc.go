@@ -13,17 +13,39 @@ import "strconv"
 // example to show how to declare the arguments
 // and reply for an RPC.
 //
-
-type ExampleArgs struct {
-	X int
-}
-
-type ExampleReply struct {
-	Y int
-}
+// type ExampleArgs struct {
+// 	X int
+// }
+//
+// type ExampleReply struct {
+// 	Y int
+// }
 
 // Add your RPC definitions here.
+type RegisterWorkerArgs struct {
+}
 
+type RegisterWorkerReply struct {
+	WorkerName string
+	NReduce    uint
+}
+
+type GetMapArgs struct {
+	WorkerName string
+}
+
+type GetMapReply struct {
+	MapInput string
+}
+
+type MarkMapDoneArgs struct {
+	WorkerName string
+	MapInput   string
+}
+
+type MarkMapDoneReply struct {
+	DoneAck bool
+}
 
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.

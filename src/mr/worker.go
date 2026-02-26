@@ -108,21 +108,21 @@ map_loop:
 		mapInputFile, fileError := os.Open(mapInputFileName)
 		if fileError != nil {
 			log.Printf("Error while opening input file %s: %s", mapInputFileName, fileError)
-			panic(fileError)
+			continue map_loop
 		}
 		defer mapInputFile.Close()
 
 		fileByteContent, fileError := io.ReadAll(mapInputFile)
 		if fileError != nil {
 			log.Printf("Error while reading input file %s: %s", mapInputFileName, fileError)
-			panic(fileError)
+			continue map_loop
 		}
 
 		fileStringContent := string(fileByteContent)
-		log.Printf("Read input file %s:\n%s[...]\n", mapInputFileName, fileStringContent[:10])
+		// log.Printf("Read input file %s:\n%s[...]\n", mapInputFileName, fileStringContent[:10])
 
 		kv := mapf(mapInputFileName, fileStringContent)
-		log.Printf("Computed key-value for inputfile %s: %v [truncated]\n", mapInputFileName, kv[:10])
+		// log.Printf("Computed key-value for inputfile %s: %v [truncated]\n", mapInputFileName, kv[:10])
 
 		for _, keyVal := range kv {
 			index := ihash(keyVal.Key) % int(nReduce)
@@ -130,7 +130,7 @@ map_loop:
 			if err != nil {
 				//TODO: think about it (https://open.spotify.com/track/4SoFYjj0p7W1MRyZFF2fLk?si=2cd2b9f789a847b0)
 				log.Printf("Could not write results correctly, aborting.")
-				panic(err)
+				continue map_loop
 			}
 		}
 
@@ -179,8 +179,9 @@ reduce_loop:
 			fileScanner := bufio.NewScanner(file)
 
 			for fileScanner.Scan() {
-				kv, err := ParseKeyValue(fileScanner.Text())
-				if err != nil {
+				line := fileScanner.Text()
+				kv, err := ParseKeyValue(line)
+				if err != nil || kv.Key == "" {
 					//TODO: we tolerate invalid lines in input file for now, should we?
 					log.Printf("Error while parsing line: %s", err)
 					continue
@@ -211,11 +212,14 @@ reduce_loop:
 		outFile, err := os.Create(outFileName)
 		if err != nil {
 			log.Printf("Error while creating output file number %d, got error %s\n", partitionId, err)
-			panic(err)
+			continue reduce_loop
 		}
 		defer outFile.Close()
 
 		for k, l := range valuesByKey {
+			if k == "" {
+				continue
+			}
 			fmt.Fprintf(outFile, "%s %s\n", k, reducef(k, l))
 		}
 

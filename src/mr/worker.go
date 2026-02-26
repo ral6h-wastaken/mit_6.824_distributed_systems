@@ -33,8 +33,6 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 		panic(registerErr)
 	}
 
-	time.Sleep(10 * time.Second)
-
 	mappedFiles := make([]*os.File, 0, nReduce)
 	for i := 0; i < int(nReduce); i++ {
 		f, err := os.Create(fmt.Sprintf("mapped-%s-%d", workerId, i))
@@ -61,6 +59,7 @@ func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string)
 map_loop:
 	for {
 		mapInputFileName, getMapErr := GetMapInput(workerId)
+		time.Sleep(11 * time.Second)
 
 		if getMapErr != nil {
 			if getMapErr.Error() == ALL_MAP_TASKS_QUEUED {

@@ -39,11 +39,31 @@ type GetMapReply struct {
 }
 
 type MarkMapDoneArgs struct {
-	WorkerName string
-	MapInput   string
+	WorkerName                 string
+	MapInput                   string
+	IntermediateFilesPartition map[int]string
 }
 
 type MarkMapDoneReply struct {
+	DoneAck bool
+}
+
+type GetReduceArgs struct {
+	WorkerName string
+}
+
+type GetReduceReply struct {
+	PartitionId      uint16
+	ReduceInputFiles []string
+}
+
+type MarkReduceDoneArgs struct {
+	WorkerName  string
+	ReduceInput uint16
+	OutputFile  string
+}
+
+type MarkReduceDoneReply struct {
 	DoneAck bool
 }
 

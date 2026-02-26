@@ -21,9 +21,10 @@ type MapTask struct {
 }
 
 type ReduceTask struct {
-	id          uint
-	assignedTo  string
-	timeElapsed time.Time
+	id         uint
+	assignedTo string
+	startTime  time.Time
+	inputFiles []string
 }
 
 type mapTasks struct {
@@ -124,7 +125,81 @@ func (c *Coordinator) MarkMapDone(args *MarkMapDoneArgs, reply *MarkMapDoneReply
 
 	reply.DoneAck = true
 
+	for id, file := range args.IntermediateFilesPartition {
+		currentPartition := &c.reduceTasks.available[id].inputFiles
+		if !slices.Contains(*currentPartition, file) {
+			*currentPartition = append(*currentPartition, file)
+		}
+	}
+
 	log.Printf("MarkMapDone - marked task %s as done by worker %s. Coordinator status: %s\n", args.MapInput, args.WorkerName, c.getStatus())
+	return nil
+}
+
+func (c *Coordinator) GetReduceInput(args *GetReduceArgs, reply *GetReduceReply) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	log.Printf("GetReduceInput started for worker %s\n", args.WorkerName)
+
+	//before assigning we check if any inProgress task have timed out (default 10 seconds), if yes we return them to the available pool
+	c.checkReduceTimeouts()
+
+	reduceTasks := &(c.reduceTasks)
+
+	if !slices.Contains(c.workers, args.WorkerName) {
+		return fmt.Errorf("Unrecognized worker %s", args.WorkerName)
+	}
+
+	if len(reduceTasks.available) == 0 {
+		if len(reduceTasks.inProgress) == 0 {
+			log.Println("GetReduceInput returning AllReduceTasksEnded")
+			return AllReduceTasksEnded{}
+		} else {
+			log.Println("GetReduceInput returning AllReduceTasksQueued")
+			return AllReduceTasksQueued{}
+		}
+	}
+
+	toSchedule := reduceTasks.available[len(reduceTasks.available)-1]
+	toSchedule.assignedTo = args.WorkerName
+	toSchedule.startTime = time.Now()
+
+	reduceTasks.inProgress = append(reduceTasks.inProgress, toSchedule)
+
+	reduceTasks.available[len(reduceTasks.available)-1] = ReduceTask{}
+	reduceTasks.available = reduceTasks.available[:len(reduceTasks.available)-1]
+
+	reply.PartitionId = uint16(toSchedule.id)
+	reply.ReduceInputFiles = toSchedule.inputFiles
+
+	log.Printf("GetReduceInput ended for worker %s. Coordinator status: %s\n", args.WorkerName, c.getStatus())
+	return nil
+}
+
+func (c *Coordinator) MarkReduceDone(args *MarkReduceDoneArgs, reply *MarkReduceDoneReply) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	log.Printf("MarkReduceDone - task %s completed by worker %s\n", args.ReduceInput, args.WorkerName)
+
+	reduceTasks := &(c.reduceTasks)
+	hasSameName := func(task ReduceTask) bool {
+		return task.id == uint(args.ReduceInput)
+	}
+
+	if !slices.ContainsFunc(reduceTasks.inProgress, hasSameName) {
+		log.Printf("MarkReduceDone - task %s not currently marked as in progress for execution", args.ReduceInput)
+		return NoSuchScheduledReduceTask{}
+	}
+
+	reduceTasks.inProgress = slices.DeleteFunc(reduceTasks.inProgress, func(task ReduceTask) bool {
+		return task.id == uint(args.ReduceInput)
+	})
+	reduceTasks.done = append(reduceTasks.done, ReduceTask{id: uint(args.ReduceInput)})
+
+	reply.DoneAck = true
+
+	log.Printf("MarkReduceDone - marked task %s as done by worker %s. Coordinator status: %s\n", args.ReduceInput, args.WorkerName, c.getStatus())
 	return nil
 }
 
@@ -218,6 +293,34 @@ func (c *Coordinator) checkMapTimeouts() {
 		task.startTime = time.Time{}
 		task.assignedTo = ""
 		c.mapTasks.available = append(c.mapTasks.available, task)
+	}
+}
+
+// UNSAFE: this function does not lock the object state, make sure it is called from a 'synchronized' method
+func (c *Coordinator) checkReduceTimeouts() {
+	toDeleteIndexes := make([]int, 0)
+
+	runningReduces := c.reduceTasks.inProgress
+	for i, running := range runningReduces {
+		if time.Since(running.startTime) >= 10*time.Second {
+			log.Printf("Task %s has timed out, making it available again.\n", running.id)
+			toDeleteIndexes = append(toDeleteIndexes, i)
+		}
+	}
+
+	for _, index := range toDeleteIndexes {
+		task := runningReduces[index]
+
+		//TODO: think about it more carefully! how should we handle worker deaths?
+		c.workers = slices.DeleteFunc(c.workers, func(worker string) bool { return worker == task.assignedTo })
+
+		c.reduceTasks.inProgress = slices.DeleteFunc(runningReduces, func(running ReduceTask) bool {
+			return running.id == task.id
+		})
+
+		task.startTime = time.Time{}
+		task.assignedTo = ""
+		c.reduceTasks.available = append(c.reduceTasks.available, task)
 	}
 }
 

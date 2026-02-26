@@ -180,7 +180,7 @@ func (c *Coordinator) GetReduceInput(args *GetReduceArgs, reply *GetReduceReply)
 func (c *Coordinator) MarkReduceDone(args *MarkReduceDoneArgs, reply *MarkReduceDoneReply) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	log.Printf("MarkReduceDone - task %s completed by worker %s\n", args.ReduceInput, args.WorkerName)
+	log.Printf("MarkReduceDone - task %d completed by worker %s\n", args.ReduceInput, args.WorkerName)
 
 	reduceTasks := &(c.reduceTasks)
 	hasSameName := func(task ReduceTask) bool {
@@ -188,7 +188,7 @@ func (c *Coordinator) MarkReduceDone(args *MarkReduceDoneArgs, reply *MarkReduce
 	}
 
 	if !slices.ContainsFunc(reduceTasks.inProgress, hasSameName) {
-		log.Printf("MarkReduceDone - task %s not currently marked as in progress for execution", args.ReduceInput)
+		log.Printf("MarkReduceDone - task %d not currently marked as in progress for execution", args.ReduceInput)
 		return NoSuchScheduledReduceTask{}
 	}
 
@@ -199,7 +199,7 @@ func (c *Coordinator) MarkReduceDone(args *MarkReduceDoneArgs, reply *MarkReduce
 
 	reply.DoneAck = true
 
-	log.Printf("MarkReduceDone - marked task %s as done by worker %s. Coordinator status: %s\n", args.ReduceInput, args.WorkerName, c.getStatus())
+	log.Printf("MarkReduceDone - marked task %d as done by worker %s. Coordinator status: %s\n", args.ReduceInput, args.WorkerName, c.getStatus())
 	return nil
 }
 
@@ -303,7 +303,7 @@ func (c *Coordinator) checkReduceTimeouts() {
 	runningReduces := c.reduceTasks.inProgress
 	for i, running := range runningReduces {
 		if time.Since(running.startTime) >= 10*time.Second {
-			log.Printf("Task %s has timed out, making it available again.\n", running.id)
+			log.Printf("Task %d has timed out, making it available again.\n", running.id)
 			toDeleteIndexes = append(toDeleteIndexes, i)
 		}
 	}

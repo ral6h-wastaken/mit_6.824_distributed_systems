@@ -108,6 +108,8 @@ map_loop:
 		mapInputFile, fileError := os.Open(mapInputFileName)
 		if fileError != nil {
 			log.Printf("Error while opening input file %s: %s", mapInputFileName, fileError)
+			//TODO: this is just a workaround since the map and reduce operations should teoretically run in parallel
+			MarkMapDone(workerId, mapInputFileName, intermediateResultFiles)
 			continue map_loop
 		}
 		defer mapInputFile.Close()

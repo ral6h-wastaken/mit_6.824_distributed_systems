@@ -2,11 +2,15 @@ package kvsrv
 
 import (
 	"fmt"
+	// "log"
+	"time"
 
 	"6.5840/kvsrv1/rpc"
 	kvtest "6.5840/kvtest1"
 	tester "6.5840/tester1"
 )
+
+const SLEEP_TIME_MILLIS = 100
 
 type Clerk struct {
 	clnt   *tester.Clnt
@@ -33,9 +37,12 @@ func (ck *Clerk) Get(key string) (string, rpc.Tversion, rpc.Err) {
 	args := rpc.GetArgs{Key: key}
 	reply := rpc.GetReply{}
 
+	call_loop:
 	for {
 		if ok := ck.clnt.Call(ck.server, "KVServer.Get", &args, &reply); !ok {
-			panic("Rpc GET call failed")
+			// log.Printf("did not receive response from rpc client")
+			time.Sleep(SLEEP_TIME_MILLIS * time.Millisecond)
+			continue call_loop
 		}
 
 		switch reply.Err {
@@ -67,6 +74,8 @@ func (ck *Clerk) Get(key string) (string, rpc.Tversion, rpc.Err) {
 // arguments. Additionally, reply must be passed as a pointer.
 func (ck *Clerk) Put(key, value string, version rpc.Tversion) rpc.Err {
 	// You will have to modify this function.
+	put_try := 0
+
 	args := rpc.PutArgs{
 		Key:     key,
 		Value:   value,
@@ -75,23 +84,29 @@ func (ck *Clerk) Put(key, value string, version rpc.Tversion) rpc.Err {
 
 	reply := rpc.PutReply{}
 
-	if ok := ck.clnt.Call(ck.server, "KVServer.Put", &args, &reply); !ok {
-		panic("Rpc PUT call failed")
-	}
+	call_loop:
+	for {
+		put_try += 1
 
-	switch reply.Err {
-	case rpc.ErrVersion:
-		//TODO: implement retry logic
-		/* if "first try" { */
-		return rpc.ErrVersion
-		// } else {
-		// 	return rpc.ErrMaybe
-		// }
-	case rpc.ErrNoKey:
-		return rpc.ErrNoKey
-	case rpc.OK:
-		return rpc.OK
-	default:
-		panic(fmt.Sprintf("Unexpected PUT error %s", reply.Err))
+		if ok := ck.clnt.Call(ck.server, "KVServer.Put", &args, &reply); !ok {
+			// log.Printf("did not receive response from rpc client")
+			time.Sleep(SLEEP_TIME_MILLIS * time.Millisecond)
+			continue call_loop
+		}
+
+		switch reply.Err {
+		case rpc.ErrVersion:
+			if put_try == 1 {
+			return rpc.ErrVersion
+			} else {
+				return rpc.ErrMaybe
+			}
+		case rpc.ErrNoKey:
+			return rpc.ErrNoKey
+		case rpc.OK:
+			return rpc.OK
+		default:
+			panic(fmt.Sprintf("Unexpected PUT error %s", reply.Err))
+		}
 	}
 }

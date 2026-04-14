@@ -81,11 +81,12 @@ func (ck *Clerk) Put(key, value string, version rpc.Tversion) rpc.Err {
 
 	switch reply.Err {
 	case rpc.ErrVersion:
-		if version == 0 {
-			return rpc.ErrVersion
-		} else {
-			return rpc.ErrMaybe
-		}
+		//TODO: implement retry logic
+		/* if "first try" { */
+		return rpc.ErrVersion
+		// } else {
+		// 	return rpc.ErrMaybe
+		// }
 	case rpc.ErrNoKey:
 		return rpc.ErrNoKey
 	case rpc.OK:

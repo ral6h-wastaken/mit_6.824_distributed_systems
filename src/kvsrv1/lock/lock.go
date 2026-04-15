@@ -1,6 +1,10 @@
 package lock
 
 import (
+	// "time"
+
+	"fmt"
+
 	"6.5840/kvsrv1/rpc"
 	"6.5840/kvtest1"
 )
@@ -20,8 +24,9 @@ type Lock struct {
 	ck kvtest.IKVClerk
 
 	// You may add code here
-	lockId string
-	curVer rpc.Tversion
+	clientId string
+	lockId   string
+	curVer   rpc.Tversion
 }
 
 // The tester calls MakeLock() and passes in a k/v clerk; your code can
@@ -31,9 +36,11 @@ type Lock struct {
 // precisely what the lock state is).
 func MakeLock(ck kvtest.IKVClerk, l string) *Lock {
 	lk := &Lock{
-		ck:     ck,
-		lockId: l,
-		curVer: 0,
+		ck: ck,
+
+		clientId: kvtest.RandValue(8),
+		lockId:   l,
+		curVer:   0,
 	}
 	// You may add code here
 	return lk
@@ -58,63 +65,67 @@ func (lk *Lock) Acquire() {
 			if errVersion we lost the race -> continue
 			else we now own the lock with our version and we break the loop happily :D
 	*/
+	// acquire_try := 0
+
+	STATE_LOCKED_BY_US := fmt.Sprintf("%s-%s", STATE_LOCKED, lk.clientId)
 
 acquire_loop:
 	for {
+		// acquire_try += 1
 		state, version, err := lk.ck.Get(lk.lockId)
 
-		switch err {
-		case rpc.ErrNoKey:
-			if lk.curVer != 0 {
-				panic("Got ErrNoKey but current version > 0")
-			}
-			putErr := lk.ck.Put(lk.lockId, STATE_LOCKED, lk.curVer)
-
-			switch putErr {
-			case rpc.OK:
-				//we currently own the lock yay
-				lk.curVer += 1
-				break acquire_loop
-			case rpc.ErrVersion:
-				//we lost the race and someoneelse got to create the lock b4 us
-				continue acquire_loop
-			case rpc.ErrMaybe: //TODO: handle correctly, should not be thrown in a reliable net
-				continue acquire_loop
-			}
-
-		case rpc.OK:
+		if err == rpc.OK {
 			if lk.curVer != version {
 				lk.curVer = version
 			}
 
-			switch state {
-			case STATE_LOCKED:
-				continue acquire_loop
-			case STATE_UNLOCKED:
-				putErr := lk.ck.Put(lk.lockId, STATE_LOCKED, lk.curVer)
-
-				switch putErr {
-				case rpc.OK:
-					//we currently own the lock yay
-					lk.curVer += 1
-					break acquire_loop
-				case rpc.ErrVersion:
-					//we lost the race and someoneelse got to create the lock b4 us
-					continue acquire_loop
-				case rpc.ErrMaybe: //TODO: handle correctly, should not be thrown in a reliable net
-					continue acquire_loop
-				}
+			if STATE_LOCKED_BY_US == state {
+				break acquire_loop
 			}
+
+			if STATE_UNLOCKED != state {
+				continue acquire_loop
+			}
+		}
+
+		putErr := lk.ck.Put(lk.lockId, STATE_LOCKED_BY_US, lk.curVer)
+		switch putErr {
+		case rpc.OK:
+			lk.curVer += 1
+			break acquire_loop
+		case rpc.ErrVersion:
+		case rpc.ErrMaybe:
+			continue acquire_loop
+
 		}
 	}
 }
 
 func (lk *Lock) Release() {
-	err := lk.ck.Put(lk.lockId, STATE_UNLOCKED, lk.curVer)
 
-	if err != rpc.OK {
-		panic("Calling release on a non owned lock")
+	STATE_LOCKED_BY_US := fmt.Sprintf("%s-%s", STATE_LOCKED, lk.clientId)
+
+rel_loop:
+	for {
+		err := lk.ck.Put(lk.lockId, STATE_UNLOCKED, lk.curVer)
+
+		switch err {
+		case rpc.ErrMaybe:
+			state, version, err := lk.ck.Get(lk.lockId)
+			if err != rpc.OK {
+				panic(fmt.Sprintf("Unexpected error %s", err))
+			}
+			if state == STATE_LOCKED_BY_US {
+				continue rel_loop
+			} else {
+				lk.curVer = version
+				break rel_loop
+			}
+		case rpc.OK:
+			lk.curVer += 1
+			break rel_loop
+		case rpc.ErrVersion:
+			panic("Calling release on a non owned lock")
+		}
 	}
-
-	lk.curVer += 1
 }
